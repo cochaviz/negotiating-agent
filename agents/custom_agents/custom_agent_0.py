@@ -24,6 +24,8 @@ from geniusweb.profileconnection.ProfileConnectionFactory import (
 )
 from geniusweb.progress.ProgressRounds import ProgressRounds
 
+from utils.frequency_analyzer import FrequencyAnalyzzzer, MissingHistoryException
+
 
 class CustomAgent(DefaultParty):
     """
@@ -34,7 +36,8 @@ class CustomAgent(DefaultParty):
         super().__init__()
         self.getReporter().log(logging.INFO, "party is initialized")
         self._profile = None
-        self._last_received_bid: Bid = None
+        self._last_received_bid = None
+        self.analyzer = None
 
     def notifyChange(self, info: Inform):
         """This is the entry point of all interaction with your agent after is has been initialised.
@@ -56,6 +59,7 @@ class CustomAgent(DefaultParty):
             self._profile = ProfileConnectionFactory.create(
                 info.getProfile().getURI(), self.getReporter()
             )
+            self.analyzer= FrequencyAnalyzzzer(self._profile.getProfile().getDomain())
         # ActionDone is an action send by an opponent (an offer or an accept)
         elif isinstance(info, ActionDone):
             action: Action = cast(ActionDone, info).getAction()
@@ -107,6 +111,14 @@ class CustomAgent(DefaultParty):
 
     # execute a turn
     def _myTurn(self):
+        self.analyzer.add_bid(self._last_received_bid)
+
+        try:
+            print("Predicted bid:", self.analyzer.predict())
+            print("Adversary bid:", self._last_received_bid)
+        except MissingHistoryException:
+            print("Missing history, need more bids")
+
         # check if the last received offer if the opponent is good enough
         if self._isGoodIncoming(self._last_received_bid):
             # if so, accept the offer
@@ -119,7 +131,7 @@ class CustomAgent(DefaultParty):
         # send the action
         self.getConnection().send(action)
 
-    def _getProfileAndProgress(self) -> bool:
+    def _getProfileAndProgress(self):
         profile = self._profile.getProfile()
         progress = self._progress.get(0)
 
