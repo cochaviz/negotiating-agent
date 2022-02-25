@@ -13,18 +13,12 @@ from geniusweb.inform.Inform import Inform
 from geniusweb.inform.Settings import Settings
 from geniusweb.inform.YourTurn import YourTurn
 from geniusweb.issuevalue.Bid import Bid
-from geniusweb.issuevalue.Domain import Domain
-from geniusweb.issuevalue.Value import Value
-from geniusweb.issuevalue.ValueSet import ValueSet
 from geniusweb.party.Capabilities import Capabilities
 from geniusweb.party.DefaultParty import DefaultParty
-from geniusweb.profile.utilityspace.UtilitySpace import UtilitySpace
 from geniusweb.profileconnection.ProfileConnectionFactory import (
     ProfileConnectionFactory,
 )
-from geniusweb.progress.ProgressRounds import ProgressRounds
-
-from utils.frequency_analyzer import FrequencyAnalyzzzer, MissingHistoryException
+from utils.frequency_analyzer import FrequencyAnalyzer, MissingHistoryException
 
 
 class CustomAgent(DefaultParty):
@@ -37,7 +31,10 @@ class CustomAgent(DefaultParty):
         self.getReporter().log(logging.INFO, "party is initialized")
         self._profile = None
         self._last_received_bid = None
-        self.analyzer = None
+
+        # General settings
+        self.opponent_model = FrequencyAnalyzer()
+        self.reservation_value: float = .8
 
     def notifyChange(self, info: Inform):
         """This is the entry point of all interaction with your agent after is has been initialised.
@@ -59,7 +56,7 @@ class CustomAgent(DefaultParty):
             self._profile = ProfileConnectionFactory.create(
                 info.getProfile().getURI(), self.getReporter()
             )
-            self.analyzer= FrequencyAnalyzzzer(self._profile.getProfile().getDomain())
+            self.opponent_model.set_domain(self._profile.getProfile().getDomain())
         # ActionDone is an action send by an opponent (an offer or an accept)
         elif isinstance(info, ActionDone):
             action: Action = cast(ActionDone, info).getAction()
@@ -111,11 +108,10 @@ class CustomAgent(DefaultParty):
 
     # execute a turn
     def _myTurn(self):
-        self.analyzer.add_bid(self._last_received_bid)
+        self.opponent_model.add_bid(self._last_received_bid)
 
         try:
-            print("Predicted bid:", self.analyzer.predict())
-            print("Adversary bid:", self._last_received_bid)
+            predicted_bid = self.opponent_model.predict()
         except MissingHistoryException:
             print("Missing history, need more bids")
 
@@ -144,9 +140,8 @@ class CustomAgent(DefaultParty):
 
         profile, progress = self._getProfileAndProgress()
 
-        # very basic approach that accepts if the offer is valued above 0.6 and
-        # 80% of the rounds towards the deadline have passed
-        return profile.getUtility(bid) > 0.6 and progress > 0.8
+        # Has to be at least more than the reservation value
+        return profile.getUtility(bid) > self.reservation_value and progress > 0.8
 
     # method that checks if we should agree with an outgoing offer
     def _isGoodOutgoing(self, bid: Bid) -> bool:
