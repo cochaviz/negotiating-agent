@@ -2,13 +2,16 @@ from geniusweb.issuevalue.Value import Value
 from geniusweb.issuevalue.Bid import Bid
 from geniusweb.issuevalue.Domain import Domain
 
-class FrequencyAnalyzzzer:
-    def __init__(self, domain: Domain) -> None:
+class FrequencyAnalyzer:
+    def __init__(self) -> None:
         self.number_bids: int = 0
         self.last_bid: Bid|None = None
-        self.domain: Domain = domain
+        self.domain: Domain
 
         self.frequency_table: dict[str, tuple[float, dict[Value, float], int]] = {}
+
+    def set_domain(self, domain: Domain):
+        self.domain = domain
 
     def _init_table(self) -> None:
         if self.last_bid is None:
