@@ -112,6 +112,40 @@ class FrequencyAnalyzer:
 
         return max_key
 
+    """
+    Returns an approximation of the opponents utility for the given bid
+    """
+    def get_utility(self, bid: Bid):
+        utility = 0.0
+
+        for issue in self.domain.getIssues():
+            freq, value_freqs, _ = self.frequency_table[issue]
+            issue_value = bid.getValue(issue)
+            assert issue_value is not None
+            # Take the 'importance' of the current issue, and multiply it by the utility with the associated value
+            utility +=  freq * value_freqs[issue_value]
+            # sum of all importances is 1.0
+            # best values of each issue is always 1.0
+            # => max utility is 1.0, thus admissable
+
+        return utility
+
+    """
+    Return a list of issues and the difference in their importance [0.0, 1.0]
+    The higher the number, the better the compatibility
+    """
+    def utility_compatibility(self, other_importance: dict[str, float]) -> dict[str, float]:
+        compatibility: dict[str, float] = dict()
+
+        for issue in self.domain.getIssues():
+            freq, _, _ = self.frequency_table[issue]
+            compatibility[issue] = abs(other_importance[issue] - freq)
+
+        return compatibility
+
+    """
+    Return next predicted bid based on frequency analysis
+    """
     def predict(self) -> Bid:
         if len(self.frequency_table) == 0:
             raise MissingHistoryException()
@@ -122,7 +156,6 @@ class FrequencyAnalyzer:
             prediction[issue] = self._get_max_value(issue)
 
         return Bid(prediction)
-
 
 
 class MissingHistoryException(Exception):
