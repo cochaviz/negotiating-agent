@@ -1,5 +1,6 @@
 from decimal import Decimal
 import logging
+import math
 from random import randint
 from typing import Callable, cast
 from geniusweb.profile.utilityspace.LinearAdditive import LinearAdditive
@@ -46,9 +47,9 @@ class CustomAgent(DefaultParty):
         # General settings
         self.opponent_model = FrequencyAnalyzer()
         self.reservation_utility: float = .0 # not sure if this is a good value to have, since any agreement is better than no agreement...
-        self.falldown_speed: float = 1.2 # < 1: will concede faster; > 1: will concede slower [0.0, ...]
+        self.falldown_speed: float = 8.0 # higher will concede slower (1/e is approximately linear) [0.0, ...]
         self.attempts: int = 100 # the number of iterations it will go through to look for an 'optimal' bid
-        self.hard_to_get: float = .1 #  the moment from which we'll consider playing nice [0.0, 1.0]
+        self.hard_to_get: float = .5 #  the moment from which we'll consider playing nice [0.0, 1.0]
         self.niceness: Decimal = Decimal(.05) # utility we're considering to give up for the sake of being nice [0.0, 1.0]
 
         # Agent characteristics:
@@ -78,8 +79,10 @@ class CustomAgent(DefaultParty):
             self.opponent_model.set_domain(self._profileint.getProfile().getDomain())
 
             reservation_bid = self._profileint.getProfile().getReservationBid()
+
             if reservation_bid is not None:
-                self.reservation_utility = self._profileint.getProfile().getUtility(reservation_bid)
+                profile, _ = self._get_profile_and_progress()
+                self.reservation_utility = profile.getUtility(reservation_bid)
 
         # ActionDone is an action send by an opponent (an offer or an accept)
         elif isinstance(info, ActionDone):
@@ -134,6 +137,7 @@ class CustomAgent(DefaultParty):
     def _my_turn(self):
         self._update_utilspace()
         self.opponent_model.add_bid(self._last_received_bid)
+
         next_bid = self._find_bid(self.attempts)
 
         if self._is_acceptable(self._last_received_bid, next_bid):
@@ -148,22 +152,38 @@ class CustomAgent(DefaultParty):
     # === ACCEPTING ===
     # =================
 
-    # method that checks if we should agree with an incoming offer
     def _is_acceptable(self, bid: Bid, our_next_bid: Bid) -> bool:
         if bid is None:
             return False
 
-        profile, progress = self._get_profile_and_progress()
+        profile, _ = self._get_profile_and_progress()
         bid_utility = profile.getUtility(bid)
-        target_bid_utility = profile.getUtility(our_next_bid)
 
-        # TODO non-linear conceding strategy
-        threshold = self.falldown_speed * (1.0 - progress) * float(target_bid_utility)
+        threshold = self._lower_util_bound()
         self.thresholds.append(threshold)
 
-        # Has to be at least more than the reservation value
-        return bid_utility > self.reservation_utility and bid_utility > threshold
+        # has to be higher than the reservation value and our threshold, but if the bid is better than we expect we'll always accept
+        return (bid_utility > self.reservation_utility and bid_utility > threshold) or bid_utility > profile.getUtility(our_next_bid)
 
+    def _lower_util_bound(self) -> float:
+        _, progress = self._get_profile_and_progress()
+
+        # subtract niceness to make sure we'll always have some agreement
+        # => check _exponential decrease for more info
+        threshold = self._exponential_decrease(progress, self.falldown_speed) - float(self.niceness)
+
+        return threshold
+
+    """
+    A function which is 1.0 at x=0.0, and 0.0 at x=1.0.
+    k determines how quickly it falls to 0.0; higher k is slower decrease
+    - k > 1/e will first fall slowly, then fast
+    - k < 1/e will first fall fast, then slow
+    - k = 1/e ~ linear
+    NOTE rounding errors make x=1.0 not actually intersect (worse with higher k)
+    """
+    def _exponential_decrease(self, x, k):
+        return -math.exp(x**k) + 2 - x**k * (-math.e + 2)
 
     # ===============
     # === BIDDING ===
@@ -181,14 +201,6 @@ class CustomAgent(DefaultParty):
             return self._find_max_bid()
         else:
             return self._find_max_nice_bid(attempts)
-
-    def _lower_util_bound(self, our_bid: Bid) -> float:
-        profile, progress = self._get_profile_and_progress()
-
-        target_bid_utility = profile.getUtility(our_bid)
-        threshold = self.falldown_speed * (1.0 - progress) * float(target_bid_utility)
-
-        return threshold
 
     """
     Gets a random bid from the given list of all_bids
