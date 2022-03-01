@@ -15,9 +15,11 @@ from geniusweb.inform.YourTurn import YourTurn
 from geniusweb.issuevalue.Bid import Bid
 from geniusweb.party.Capabilities import Capabilities
 from geniusweb.party.DefaultParty import DefaultParty
+from geniusweb.profile.Profile import Profile
 from geniusweb.profileconnection.ProfileConnectionFactory import (
     ProfileConnectionFactory,
 )
+from geniusweb.profileconnection.ProfileInterface import ProfileInterface
 from utils.frequency_analyzer import FrequencyAnalyzer, MissingHistoryException
 
 
@@ -29,8 +31,8 @@ class CustomAgent(DefaultParty):
     def __init__(self):
         super().__init__()
         self.getReporter().log(logging.INFO, "party is initialized")
-        self._profile = None
-        self._last_received_bid = None
+        self._profile: ProfileInterface
+        self._last_received_bid: Bid
 
         # General settings
         self.opponent_model = FrequencyAnalyzer()
@@ -112,29 +114,30 @@ class CustomAgent(DefaultParty):
 
         try:
             predicted_bid = self.opponent_model.predict()
+            print("Most likely next bid:", predicted_bid)
         except MissingHistoryException:
             print("Missing history, need more bids")
 
         # check if the last received offer if the opponent is good enough
-        if self._isGoodIncoming(self._last_received_bid):
+        if self._is_acceptable(self._last_received_bid):
             # if so, accept the offer
             action = Accept(self._me, self._last_received_bid)
         else:
             # if not, find a bid to propose as counter offer
-            bid = self._findBid()
+            bid = self._find_bid()
             action = Offer(self._me, bid)
 
         # send the action
         self.getConnection().send(action)
 
-    def _getProfileAndProgress(self):
-        profile = self._profile.getProfile()
-        progress = self._progress.get(0)
+    def _getProfileAndProgress(self) -> tuple[Profile, float]:
+        profile: Profile = self._profile.getProfile()
+        progress: float = self._progress.get(0)
 
         return profile, progress
 
     # method that checks if we should agree with an incoming offer
-    def _isGoodIncoming(self, bid: Bid) -> bool:
+    def _is_acceptable(self, bid: Bid) -> bool:
         if bid is None:
             return False
 
@@ -150,16 +153,16 @@ class CustomAgent(DefaultParty):
 
         profile, progress = self._getProfileAndProgress()
 
-        return profile.getUtility(bid) > 0.4 and progress > 0.8
+        return profile.getUtility(bid) > self.reservation_value and progress > 0.8
 
-    def _findBid(self, attempts=50) -> Bid:
+    def _find_bid(self, attempts=50) -> Bid:
         # compose a list of all possible bids
         domain = self._profile.getProfile().getDomain()
         all_bids = AllBidsList(domain)
-        profile, progress = self._getProfileAndProgress()
+        _, progress = self._getProfileAndProgress()
 
         if progress < 0.1:
-            return self._findMaxBid(attempts)
+            return self._find_max_bid(attempts)
 
         # take 50 attempts at finding a random bid that is acceptable to us
         for _ in range(attempts):
@@ -169,7 +172,7 @@ class CustomAgent(DefaultParty):
 
         return bid
 
-    def _findMaxBid(self, attempts=50) -> Bid:
+    def _find_max_bid(self, attempts=50) -> Bid:
         # compose a list of all possible bids
         profile, _ = self._getProfileAndProgress()
         domain = profile.getDomain()
