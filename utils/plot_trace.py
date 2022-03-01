@@ -72,4 +72,34 @@ def plot_trace(results_trace: dict, plot_file: str):
     )
     fig.update_xaxes(title_text="round", range=[0, index + 1], ticks="outside")
     fig.update_yaxes(title_text="utility", range=[0, 1], ticks="outside")
+    print("{os.path.splitext(plot_file)[0]}.html")
     fig.write_html(f"{os.path.splitext(plot_file)[0]}.html")
+
+def plot_characteristics(characteristics: dict[str, tuple[list[int], list[float]]], n_rounds: int):
+    fig = go.Figure()
+
+    for title, data in characteristics.items():
+        fig.add_trace(
+            go.Scatter(
+                mode="lines+markers",
+                    x=data[0],
+                    y=data[1],
+                    name=title,
+                    marker={"color": "red", "size": 5},
+                    hoverinfo="skip",
+                )
+        )
+
+    fig.update_layout(
+        # width=1000,
+        height=800,
+        legend={
+            "yanchor": "bottom",
+            "y": 1,
+            "xanchor": "left",
+            "x": 0,
+        },
+    )
+    fig.update_xaxes(title_text="round", range=[0, n_rounds], ticks="outside")
+    fig.update_yaxes(title_text="utility", range=[0, 1], ticks="outside")
+    fig.write_html(f"characteristics.html")
