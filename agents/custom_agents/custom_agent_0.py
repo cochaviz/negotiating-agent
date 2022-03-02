@@ -44,17 +44,23 @@ class CustomAgent(DefaultParty):
         self._utilspace: UtilitySpace = None # type:ignore
         self._extendedspace: ExtendedUtilSpace = None # type:ignore
 
+        self.highest_social_welfare_bid: list[Bid] = []
+
         # General settings
         self.opponent_model = FrequencyAnalyzer()
         self.reservation_utility: float = .0 # not sure if this is a good value to have, since any agreement is better than no agreement...
-        self.falldown_speed: float = 8.0 # higher will concede slower (1/e is approximately linear) [0.0, ...]
-        self.attempts: int = 100 # the number of iterations it will go through to look for an 'optimal' bid
-        self.hard_to_get: float = .5 #  the moment from which we'll consider playing nice [0.0, 1.0]
-        self.niceness: Decimal = Decimal(.05) # utility we're considering to give up for the sake of being nice [0.0, 1.0]
+        self.concession_speed: float = 11.0 # higher will concede slower (1/e is approximately linear) [0.0, ...]
+        self.attempts: int = 300 # the number of iterations it will go through to look for an 'optimal' bid
+        self.hard_to_get: float = .1 #  the moment from which we'll consider playing nice [0.0, 1.0]
+        self.niceness: Decimal = Decimal(.1) # utility we're considering to give up for the sake of being nice [0.0, 1.0]
 
         # Agent characteristics:
         # Can be included in plotting, make sure the dimensionality of all of them match up
-        self.thresholds: list[float] = []
+        self.lower_utility_bound: list[float] = []
+        self.our_social_welfare: list[float] = []
+        self.their_social_welfare: list[float] = []
+        self.their_social_welfare: list[float] = []
+        self.esitmated_opponent_utility: list[float] = []
 
     def notifyChange(self, info: Inform):
         """This is the entry point of all interaction with your agent after is has been initialised.
@@ -160,7 +166,11 @@ class CustomAgent(DefaultParty):
         bid_utility = profile.getUtility(bid)
 
         threshold = self._lower_util_bound()
-        self.thresholds.append(threshold)
+
+        self.lower_utility_bound.append(threshold)
+        self.our_social_welfare.append(float(self._social_welfare(our_next_bid)))
+        self.their_social_welfare.append(float(self._social_welfare(bid)))
+        self.esitmated_opponent_utility.append(float(self.opponent_model.get_utility(our_next_bid)))
 
         # has to be higher than the reservation value and our threshold, but if the bid is better than we expect we'll always accept
         return (bid_utility > self.reservation_utility and bid_utility > threshold) or bid_utility > profile.getUtility(our_next_bid)
@@ -168,9 +178,7 @@ class CustomAgent(DefaultParty):
     def _lower_util_bound(self) -> float:
         _, progress = self._get_profile_and_progress()
 
-        # subtract niceness to make sure we'll always have some agreement
-        # => check _exponential decrease for more info
-        threshold = self._exponential_decrease(progress, self.falldown_speed) - float(self.niceness)
+        threshold = self._exponential_decrease(progress, self.concession_speed)
 
         return threshold
 
@@ -180,9 +188,13 @@ class CustomAgent(DefaultParty):
     - k > 1/e will first fall slowly, then fast
     - k < 1/e will first fall fast, then slow
     - k = 1/e ~ linear
-    NOTE rounding errors make x=1.0 not actually intersect (worse with higher k)
+    Rounding errors make x=1.0 not actually intersect (worse with higher k),
+    intersection with zero can be forced by setting force_intersect
     """
-    def _exponential_decrease(self, x, k):
+    def _exponential_decrease(self, x, k, force_intersect=True):
+        if force_intersect and x > 0.99:
+            return 0.0
+
         return -math.exp(x**k) + 2 - x**k * (-math.e + 2)
 
     # ===============
@@ -213,18 +225,31 @@ class CustomAgent(DefaultParty):
     """
     def _find_bid_with(self, proposition: Callable[[Bid, Bid], bool], attempts: int):
         # compose a list of all possible bids
+        # TODO Make the selection more constrained, the frequency analyzer performs relatively well
+        #      but the amount of time it takes to find a good/nice bid can be reduced significantly
         all_bids = AllBidsList(self._profileint.getProfile().getDomain())
 
-        # TODO start with bid which is slightly lower that the max
-        # so we can explore more win-win situations
-        maxBid = self._find_max_bid()
+        # TODO Also consider doing this differently
+        maxBid = self._find_lower_bid()
 
-        # generate an _attempt_ number of bids and get the one with the max utility
         for _ in range(attempts):
             bid = self._get_random_bid(all_bids)
             maxBid = bid if proposition(bid, maxBid) else maxBid
 
+        self.highest_social_welfare_bid.append(maxBid)
         return maxBid
+
+    """
+    Find a bid according to the current lower bound
+    returns _find_max_bid if no bid in that range can be found
+    """
+    def _find_lower_bid(self) -> Bid:
+        lower_bound_bids = self._extendedspace.getBids(Decimal(self._lower_util_bound()))
+
+        if lower_bound_bids.size() == 0:
+            return self._find_max_bid()
+
+        return self._get_random_bid(lower_bound_bids)
 
     """
     Find the maximum bids from the domain
@@ -239,7 +264,7 @@ class CustomAgent(DefaultParty):
     """
     def _find_max_nice_bid(self, attempts) -> Bid:
         # some cheeky CPL currying
-        return self._find_bid_with((lambda a, b: self._is_better_bid(a, b,  self.niceness, be_nice=True)), attempts)
+        return self._find_bid_with((lambda a, b: self._is_better_bid(a, b,  self.niceness, be_nice=True) and self._is_acceptable(a, b)), attempts)
 
     """
     Checks if bid a is better than bid b.
@@ -256,6 +281,11 @@ class CustomAgent(DefaultParty):
             # TODO Social welfare metric?
             return profile.getUtility(a) >= profile.getUtility(b) - niceness \
                 and self.opponent_model.get_utility(a) >= self.opponent_model.get_utility(b)
+
+    def _social_welfare(self, bid: Bid) -> Decimal:
+        profile, _ = self._get_profile_and_progress()
+
+        return (profile.getUtility(bid) + Decimal(self.opponent_model.get_utility(bid)))/Decimal(2.0)
 
     # ==============
     # === UTILS ====
@@ -283,8 +313,12 @@ class CustomAgent(DefaultParty):
 
     def _plot_characteristics(self) -> None:
         characteristics = {
-            "thresholds": (list(range(len(self.thresholds))), self.thresholds)
+            "lowest acceptable utility": self._plot_space(self.lower_utility_bound, "gray"),
+            "social welfare (ours, estimation)": self._plot_space(self.our_social_welfare, "green"),
+            "social welfare (theirs, estimation)": self._plot_space(self.their_social_welfare, "blue"),
+            "opponent utility (estimation)": self._plot_space(self.esitmated_opponent_utility, "red")
         }
-        print(characteristics)
-        plot_characteristics(characteristics, len(self.thresholds))
+        plot_characteristics(characteristics, len(self.lower_utility_bound))
 
+    def _plot_space(self, arr: list, color: str) -> tuple[list, list, str]:
+        return (list(range(len(arr))), arr, color)

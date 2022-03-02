@@ -23,7 +23,7 @@ class FrequencyAnalyzer:
         for issue in issues:
             values = self.domain.getValues(issue)
             value_freqs = { value : 0.0 for value in values }
-            self.frequency_table[issue] = (1/len(issues), value_freqs, 0)
+            self.frequency_table[issue] = (1.0/float(len(issues)), value_freqs, 0)
 
         issues_in_bid = self.last_bid.getIssues()
 
@@ -53,13 +53,13 @@ class FrequencyAnalyzer:
         if self.last_bid.getValue(issue) == bid.getValue(issue):
             # update frequency of current bid
             freq, value_freqs, value_max_occurence = self.frequency_table[issue]
-            self.frequency_table[issue] = (freq + n, value_freqs, value_max_occurence)
+            self.frequency_table[issue] = ((freq * self.number_bids + 1)/float(self.number_bids + 1), value_freqs, value_max_occurence)
 
             for other_issue in issues:
                 # and 'compensate' this frequency change with others
-                if not issue == other_issue:
+                if issue != other_issue:
                     other_freq, other_value_freqs, other_value_max_occurence = self.frequency_table[other_issue]
-                    self.frequency_table[other_issue] = (other_freq - n/len(issues), other_value_freqs, other_value_max_occurence)
+                    self.frequency_table[other_issue] = ((other_freq * self.number_bids)/float(self.number_bids + 1), other_value_freqs, other_value_max_occurence)
 
     def _update_issue_value_frequency(self, current_value: Value|None, issue: str) -> None:
         if current_value is None:
@@ -85,9 +85,7 @@ class FrequencyAnalyzer:
 
     def add_bid(self, bid: Bid, n: float =.1) -> None:
         if bid is None:
-            raise BidIsNoneException()
-
-        self.number_bids += 1
+            return
 
         if self.last_bid is None:
             self.last_bid = bid
@@ -97,6 +95,8 @@ class FrequencyAnalyzer:
         for issue in self.domain.getIssues():
             self._update_issue_frequency(bid, issue, n)
             self._update_issue_value_frequency(bid.getValue(issue), issue)
+
+        self.number_bids += 1
 
     def _get_max_value(self, issue: str) -> Value:
         _, value_frequencies, _ = self.frequency_table[issue]
