@@ -50,8 +50,8 @@ class CustomAgent(DefaultParty):
         self.opponent_model = FrequencyAnalyzer()
         self.reservation_utility: float = .0 # not sure if this is a good value to have, since any agreement is better than no agreement...
         self.concession_speed: float = 11.0 # higher will concede slower (1/e is approximately linear) [0.0, ...]
-        self.attempts: int = 300 # the number of iterations it will go through to look for an 'optimal' bid
-        self.hard_to_get: float = .1 #  the moment from which we'll consider playing nice [0.0, 1.0]
+        self.attempts: int = 500 # the number of iterations it will go through to look for an 'optimal' bid
+        self.hard_to_get: float = .2 #  the moment from which we'll consider playing nice [0.0, 1.0]
         self.niceness: Decimal = Decimal(.1) # utility we're considering to give up for the sake of being nice [0.0, 1.0]
 
         # Agent characteristics:
@@ -232,6 +232,9 @@ class CustomAgent(DefaultParty):
         # TODO Also consider doing this differently
         maxBid = self._find_lower_bid()
 
+        if maxBid is None:
+            maxBid = self.highest_social_welfare_bid[-1]
+
         for _ in range(attempts):
             bid = self._get_random_bid(all_bids)
             maxBid = bid if proposition(bid, maxBid) else maxBid
@@ -243,11 +246,11 @@ class CustomAgent(DefaultParty):
     Find a bid according to the current lower bound
     returns _find_max_bid if no bid in that range can be found
     """
-    def _find_lower_bid(self) -> Bid:
-        lower_bound_bids = self._extendedspace.getBids(Decimal(self._lower_util_bound()))
+    def _find_lower_bid(self) -> Bid|None:
+        lower_bound_bids = self._extendedspace.getBids(Decimal(self._lower_util_bound()) - self.niceness)
 
         if lower_bound_bids.size() == 0:
-            return self._find_max_bid()
+            return None
 
         return self._get_random_bid(lower_bound_bids)
 
