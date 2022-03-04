@@ -233,7 +233,10 @@ class CustomAgent(DefaultParty):
         maxBid = self._find_lower_bid()
 
         if maxBid is None:
-            maxBid = self.highest_social_welfare_bid[-1]
+            if len(self.highest_social_welfare_bid) == 0:
+                maxBid = self._find_max_bid()
+            else:
+                maxBid = self.highest_social_welfare_bid[-1]
 
         for _ in range(attempts):
             bid = self._get_random_bid(all_bids)
