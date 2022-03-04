@@ -13,9 +13,15 @@ def run(number_of_runs=10) -> list[dict]:
 
     return all_results
 
-def average_social_welfare(results: list[dict]) -> float:
-    social_welfare = list(map((lambda m: float(m["social_welfare"])), results))
+def average_of(results: list[dict], target_metric: str|None) -> float:
+    if target_metric is None:
+        raise ValueError
+
+    social_welfare = list(map((lambda m: float(m[target_metric])), results))
     return sum(social_welfare)/len(social_welfare)
+
+def average_social_welfare(results: list[dict]):
+    return average_of(results, target_metric="social_welfare")
 
 
 if __name__=="__main__":
@@ -24,4 +30,4 @@ if __name__=="__main__":
     except:
         results = run()
 
-    print(average_social_welfare(results))
+    print("Average social welfare:", average_social_welfare(results))
