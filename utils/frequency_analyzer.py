@@ -121,12 +121,14 @@ class FrequencyAnalyzer:
         for issue in self.domain.getIssues():
             freq, value_freqs, _ = self.frequency_table[issue]
             issue_value = bid.getValue(issue)
-            assert issue_value is not None
-            # Take the 'importance' of the current issue, and multiply it by the utility with the associated value
-            utility +=  freq * value_freqs[issue_value]
-            # sum of all importances is 1.0
-            # best values of each issue is always 1.0
-            # => max utility is 1.0, thus admissable
+            if issue_value is not None:
+                # Take the 'importance' of the current issue, and multiply it by the utility with the associated value
+                utility +=  freq * value_freqs[issue_value]
+                # sum of all importances is 1.0
+                # best values of each issue is always 1.0
+                # => max utility is 1.0, thus admissable
+            else:
+                utility += 0
 
         return utility
 
